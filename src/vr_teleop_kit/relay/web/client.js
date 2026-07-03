@@ -13,6 +13,7 @@
   const log = $("log"), enterBtn = $("enter-vr");
   const calibBtn = $("calibrate"), clearCalibBtn = $("clear-calib");
   const calibStateEl = $("calib-state");
+  const calibDurationInput = $("calib-duration"), calibDurationVal = $("calib-duration-val");
   const showAxesToggle = $("show-axes-toggle");
 
   // ---- Latency measurement mode (opt-in: ?latency=1, or ?latency=<hz>) ----
@@ -899,16 +900,42 @@
   });
 
   // ---- Wrist-pivot calibration ----
-  // Capture ~5s of raw controller poses while the operator freely rotates
-  // their wrists (yaw + pitch + roll, mixed) without moving the arms, then
+  // Capture a user-selected window of raw controller poses while the
+  // operator freely rotates their wrists (yaw + pitch + roll, mixed)
+  // without moving the arms, then
   // solve the linear pivot-calibration problem per hand and persist the
   // offsets. The trigger lives IN-VR (squeeze both grips) because Quest
   // browser empties inputSources while the user is pointing at a 2D HTML
   // panel — clicking the page button to start a recording, while in
   // immersive XR, doesn't work reliably on Meta browser today.
-  const CALIB_DURATION_S   = 5.0;
+  const CALIB_DURATION_KEY = "vrteleop:calib_duration_s_v1";
+  const CALIB_DURATION_MIN_S = 5;
+  const CALIB_DURATION_MAX_S = 15;
+  const CALIB_DURATION_DEFAULT_S = 10;
+  let calibDurationS = CALIB_DURATION_DEFAULT_S;
+  let activeCalibDurationS = CALIB_DURATION_DEFAULT_S;
   const CALIB_RESIDUAL_MAX = 0.015;   // 15mm RMS — anything larger probably means the arm moved
   const CALIB_OFFSET_MAX   = 0.20;    // sanity cap; real wrist offset is a few cm
+
+  const setCalibDuration = (value, { persist = false } = {}) => {
+    const parsed = Number.parseFloat(value);
+    const clamped = Math.min(
+      CALIB_DURATION_MAX_S,
+      Math.max(CALIB_DURATION_MIN_S, Number.isFinite(parsed) ? parsed : CALIB_DURATION_DEFAULT_S),
+    );
+    calibDurationS = Math.round(clamped);
+    if (calibDurationInput) calibDurationInput.value = String(calibDurationS);
+    if (calibDurationVal) calibDurationVal.textContent = `${calibDurationS} s`;
+    if (persist) {
+      try { localStorage.setItem(CALIB_DURATION_KEY, String(calibDurationS)); } catch (_) {}
+    }
+  };
+  if (calibDurationInput) {
+    setCalibDuration(localStorage.getItem(CALIB_DURATION_KEY) || CALIB_DURATION_DEFAULT_S);
+    calibDurationInput.addEventListener("input", () => {
+      setCalibDuration(calibDurationInput.value, { persist: true });
+    });
+  }
 
   // Vibrate every input source attached to a session. Used as start/end
   // signal during calibration since the operator can't see the on-page log.
@@ -1028,7 +1055,7 @@
         ui.xrState = "calibrating"; refreshPill();
         enterBtn.textContent = "Stop Teleop";
         enterBtn.disabled = false;   // allow operator to bail out via this button
-        append("calibration session started — squeeze BOTH grips simultaneously to begin a 5s capture.");
+        append(`calibration session started — squeeze BOTH grips simultaneously to begin a ${calibDurationS}s capture.`);
         xrSession.requestAnimationFrame(onXRFrame);
       } catch (err) {
         append(`calibrate: xr error: ${err.message}`);
@@ -1475,12 +1502,13 @@
         calibHandednessSeen = new Set();
         calibrating = true;
         calibStartTime = performance.now();
+        activeCalibDurationS = calibDurationS;
         pulseAllControllers(xrSession, 1.0, 200);  // start signal
-        append(`CAPTURING for ${CALIB_DURATION_S}s — twist freely now.`);
+        append(`CAPTURING for ${activeCalibDurationS}s — twist freely now.`);
       }
       if (calibrating) {
         const dt = (performance.now() - calibStartTime) / 1000;
-        if (dt >= CALIB_DURATION_S) {
+        if (dt >= activeCalibDurationS) {
           calibrating = false;
           pulseAllControllers(xrSession, 1.0, 400);  // end signal — long pulse
           append(`capture window done after ${dt.toFixed(2)}s — ending session…`);

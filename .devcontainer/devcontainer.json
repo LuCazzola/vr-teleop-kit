@@ -1,0 +1,43 @@
+{
+    "name": "vr-teleop-kit",
+    "privileged": true,
+    "remoteUser": "lcazzola",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "args": {
+            "USERNAME": "lcazzola"
+        }
+    },
+    "workspaceFolder": "/home/ws",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/home/ws,type=bind",
+    "customizations": {
+        "vscode": {
+            "extensions":[
+                "ms-vscode.cpptools",
+                "ms-vscode.cpptools-themes",
+                "twxs.cmake",
+                "donjayamanne.python-extension-pack",
+                "eamodio.gitlens",
+                "ms-iot.vscode-ros"
+            ]
+        }
+    },
+    "containerEnv": {
+        "DISPLAY": "${localEnv:DISPLAY}",
+        "NVIDIA_DRIVER_CAPABILITIES": "all",
+        "PATH": "/home/ws/.venv/bin:${localEnv:PATH}"
+    },
+    "runArgs": [
+        "--net=host",
+        "--pid=host",
+        "--ipc=host",
+        "--gpus=all",
+        "-e", "DISPLAY=${localEnv:DISPLAY}"
+    ],
+    "mounts": [
+       "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind,consistency=cached",
+       "source=/dev/dri,target=/dev/dri,type=bind,consistency=cached",
+       "source=/dev/bus/usb,target=/dev/bus/usb,type=bind"
+    ],
+    "postCreateCommand": "uv sync --extra relay && sudo chown -R $(whoami) /home/ws/"
+}

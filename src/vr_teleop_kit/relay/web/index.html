@@ -287,8 +287,17 @@
         <ol>
           <li>Press <b>Start</b>.</li>
           <li>Once in VR, squeeze <b>both grip buttons</b> to begin capture.</li>
-          <li>Twist each hand for ~5s while keeping the wrist itself in place: the hand rotates, the wrist pivot stays still.</li>
+          <li>Twist each hand while keeping the wrist itself in place: the hand rotates, the wrist pivot stays still.</li>
         </ol>
+      </div>
+      <div class="param">
+        <div class="param-head">
+          <label for="calib-duration">Capture duration</label>
+          <span class="param-val" id="calib-duration-val">10 s</span>
+        </div>
+        <div class="slider-row">
+          <input type="range" id="calib-duration" min="5" max="15" step="1" value="10">
+        </div>
       </div>
       <div class="btn-row">
         <button id="calibrate" class="btn btn-accent" disabled>Start calibration</button>
