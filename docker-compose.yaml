@@ -1,0 +1,38 @@
+services:
+  vr_teleop_kit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USERNAME: dev
+        USER_UID: ${USER_UID:-1000}
+        USER_GID: ${USER_GID:-1000}
+    container_name: vr_teleop_kit
+    user: dev
+    privileged: true
+    network_mode: host
+    pid: host
+    ipc: host
+    working_dir: /workspace
+    entrypoint: ""
+    command: sleep infinity
+    volumes:
+      - .:/workspace
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /dev/dri:/dev/dri
+      - /dev/bus/usb:/dev/bus/usb
+    environment:
+      - DEVCONTAINER_SERVICE=vr_teleop_kit
+      - DISPLAY=${DISPLAY}
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVIDIA_VISIBLE_DEVICES=all
+      - UV_PROJECT_ENVIRONMENT=/home/dev/.venv
+      - PATH=/home/dev/.venv/bin:$PATH
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+

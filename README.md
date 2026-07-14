@@ -42,6 +42,7 @@ vr-teleop-relay                               # binds 127.0.0.1:8443
 adb reverse tcp:8443 tcp:8443                 # forward Quest's localhost over USB
 # Quest browser → http://localhost:8443/
 ```
+> NOTE: you may run `adb devices` to check if your PC actually sees the VR headset
 
 One-time Quest setup: enable Developer Mode (Meta Quest mobile app →
 Devices → your headset → Developer Mode), plug in the cable, accept the
