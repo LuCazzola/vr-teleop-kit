@@ -157,6 +157,14 @@
     .btn-row .btn { flex: 1; }
     .calib-state { margin: 0.85rem 0 0; font-size: 0.85rem; color: var(--muted); }
     .calib-state.ok { color: var(--ok); }
+    .profile-row { display: flex; gap: 0.5rem; align-items: center; }
+    .profile-row select {
+      flex: 1; min-width: 0; font: inherit;
+      background: var(--surface-2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 0.5rem 0.6rem;
+    }
+    .profile-row .btn-inline { flex: none; }
 
     /* ---------- Settings sliders ---------- */
     .param {
@@ -281,9 +289,21 @@
         <h2 id="recalib-title">Wrist calibration</h2>
         <button class="icon-btn" id="recalib-close" aria-label="Close">×</button>
       </div>
+      <div class="param">
+        <div class="param-head">
+          <label for="calib-profile-select">Profile</label>
+        </div>
+        <div class="profile-row">
+          <select id="calib-profile-select"></select>
+          <button id="calib-profile-add" class="btn btn-accent btn-inline" type="button">New</button>
+          <button id="calib-profile-delete" class="btn btn-danger btn-inline" type="button">Delete</button>
+        </div>
+      </div>
       <div class="help">
         <p>Aligns the IK pivot with your real wrist so twisting a controller
-        doesn't drift the arm.</p>
+        doesn't drift the arm. Calibration is saved per-profile — pick or
+        create a profile above, then calibrate it. <b>NONE</b> is a fixed
+        built-in profile with no pivot correction (raw sensor data).</p>
         <ol>
           <li>Press <b>Start</b>.</li>
           <li>Once in VR, squeeze <b>both grip buttons</b> to begin capture.</li>
@@ -301,7 +321,7 @@
       </div>
       <div class="btn-row">
         <button id="calibrate" class="btn btn-accent" disabled>Start calibration</button>
-        <button id="clear-calib" class="btn btn-danger">Reset to default</button>
+        <button id="clear-calib" class="btn btn-danger">Clear calibration</button>
       </div>
       <p class="calib-state" id="calib-state">no calibration stored — using default offset</p>
     </div>

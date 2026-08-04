@@ -273,25 +273,123 @@
     recalibLink.textContent = ok ? "Recalibrate wrist" : "Calibrate wrist";
   };
 
-  // Pull any saved calibration. localStorage is per-origin/per-browser; clear
-  // via the dev console with `localStorage.removeItem('vrteleop:readout_offset_v1')`.
-  try {
-    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-    if (stored && Array.isArray(stored.left) && Array.isArray(stored.right)) {
-      readoutOffset.left = stored.left;
-      readoutOffset.right = stored.right;
-      append(`loaded calibration: L=${fmt3(stored.left)}  R=${fmt3(stored.right)}`);
-      setCalibStatus(true,
-        `calibrated · L=${fmt3Short(stored.left)} R=${fmt3Short(stored.right)}`,
-        "wrist calibrated");
-    } else {
-      append(`no calibration stored; default ${fallbackZ.toFixed(3)}m on Z (legacy)`);
-      setCalibStatus(false,
-        `no calibration stored — using default ${(fallbackZ*100).toFixed(0)}cm Z offset`,
-        "wrist not calibrated");
+  // ---- Wrist-calibration profiles ----
+  // Named calibration profiles let more than one operator share a headset
+  // without clobbering each other's pivot offsets. "NONE" is a built-in,
+  // immutable profile mapping to raw sensor data (no pivot correction at
+  // all) — it can't be calibrated into or deleted, so there's always an
+  // uncalibrated fallback available. Whichever profile is `active` is
+  // cached in localStorage and reloaded as the default at next startup.
+  const PROFILES_KEY = "vrteleop:calib_profiles_v1";
+  const DEFAULT_PROFILE_NAME = "LUCA";
+  const RAW_PROFILE_NAME = "NONE";
+  const rawOffsets = () => ({ left: [0, 0, 0], right: [0, 0, 0] });
+  const isRawOffsets = (o) => o.left.every((v) => v === 0) && o.right.every((v) => v === 0);
+  let xrReady = false;  // set once WebXR session mode is confirmed available
+
+  let profileStore = null;
+  try { profileStore = JSON.parse(localStorage.getItem(PROFILES_KEY) || "null"); } catch (_) {}
+  if (!profileStore || typeof profileStore.profiles !== "object" || !profileStore.profiles) {
+    // First run on this version: migrate the old single-slot calibration
+    // (if any) into a "LUCA" profile so nobody loses their existing tune.
+    let legacy = null;
+    try { legacy = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch (_) {}
+    const migrated = (legacy && Array.isArray(legacy.left) && Array.isArray(legacy.right))
+      ? { left: legacy.left, right: legacy.right }
+      : { left: [0, 0, fallbackZ], right: [0, 0, fallbackZ] };
+    profileStore = {
+      profiles: { [DEFAULT_PROFILE_NAME]: migrated, [RAW_PROFILE_NAME]: rawOffsets() },
+      active: DEFAULT_PROFILE_NAME,
+    };
+  }
+  if (!profileStore.profiles[RAW_PROFILE_NAME]) profileStore.profiles[RAW_PROFILE_NAME] = rawOffsets();
+  if (!profileStore.profiles[profileStore.active]) {
+    profileStore.active = Object.keys(profileStore.profiles)[0];
+  }
+  const persistProfiles = () => {
+    try { localStorage.setItem(PROFILES_KEY, JSON.stringify(profileStore)); } catch (_) {}
+  };
+  persistProfiles();
+
+  const profileSelect = $("calib-profile-select");
+  const addProfileBtn = $("calib-profile-add");
+  const deleteProfileBtn = $("calib-profile-delete");
+
+  const updateCalibBtnEnabled = () => {
+    if (calibBtn) calibBtn.disabled = !xrReady || profileStore.active === RAW_PROFILE_NAME;
+  };
+
+  const refreshProfileUI = () => {
+    const offsets = profileStore.profiles[profileStore.active];
+    if (profileSelect) {
+      profileSelect.innerHTML = "";
+      for (const name of Object.keys(profileStore.profiles).sort()) {
+        const opt = document.createElement("option");
+        opt.value = name; opt.textContent = name;
+        if (name === profileStore.active) opt.selected = true;
+        profileSelect.appendChild(opt);
+      }
     }
-  } catch (e) {
-    append(`couldn't load calibration: ${e.message}`);
+    if (deleteProfileBtn) {
+      deleteProfileBtn.disabled =
+        profileStore.active === RAW_PROFILE_NAME || Object.keys(profileStore.profiles).length <= 1;
+    }
+    updateCalibBtnEnabled();
+    const calibrated = offsets && !isRawOffsets(offsets);
+    if (calibrated) {
+      setCalibStatus(true,
+        `${profileStore.active} · calibrated · L=${fmt3Short(offsets.left)} R=${fmt3Short(offsets.right)}`,
+        `${profileStore.active} · calibrated`);
+    } else {
+      setCalibStatus(false,
+        `${profileStore.active} · no calibration — raw sensor data`,
+        `${profileStore.active} · not calibrated`);
+    }
+  };
+
+  const applyProfile = (name) => {
+    const offsets = profileStore.profiles[name];
+    if (!offsets) return;
+    readoutOffset.left = offsets.left;
+    readoutOffset.right = offsets.right;
+    profileStore.active = name;
+    persistProfiles();
+    refreshProfileUI();
+  };
+
+  readoutOffset.left = profileStore.profiles[profileStore.active].left;
+  readoutOffset.right = profileStore.profiles[profileStore.active].right;
+  append(`active profile "${profileStore.active}": L=${fmt3(readoutOffset.left)}  R=${fmt3(readoutOffset.right)}`);
+  refreshProfileUI();
+
+  if (profileSelect) {
+    profileSelect.addEventListener("change", () => applyProfile(profileSelect.value));
+  }
+  if (addProfileBtn) {
+    addProfileBtn.addEventListener("click", () => {
+      const name = (prompt("New profile name:") || "").trim();
+      if (!name) return;
+      if (name === RAW_PROFILE_NAME) { append(`"${RAW_PROFILE_NAME}" is reserved.`); return; }
+      if (profileStore.profiles[name]) {
+        append(`profile "${name}" already exists — switched to it.`);
+        applyProfile(name);
+        return;
+      }
+      profileStore.profiles[name] = rawOffsets();
+      applyProfile(name);
+      append(`created profile "${name}" — uncalibrated, run Start calibration.`);
+    });
+  }
+  if (deleteProfileBtn) {
+    deleteProfileBtn.addEventListener("click", () => {
+      const name = profileStore.active;
+      if (name === RAW_PROFILE_NAME || Object.keys(profileStore.profiles).length <= 1) return;
+      if (!confirm(`Delete wrist-calibration profile "${name}"? This can't be undone.`)) return;
+      delete profileStore.profiles[name];
+      const fallback = profileStore.profiles[RAW_PROFILE_NAME] ? RAW_PROFILE_NAME : Object.keys(profileStore.profiles)[0];
+      applyProfile(fallback);
+      append(`deleted profile "${name}".`);
+    });
   }
 
   // ---- WebSocket ----
@@ -865,7 +963,7 @@
       if (xrMode) {
         ui.xrState = "ready"; refreshPill();
         enterBtn.disabled = false;
-        if (calibBtn) calibBtn.disabled = false;
+        xrReady = true; updateCalibBtnEnabled();
       } else {
         ui.xrState = "unsupported"; refreshPill();
       }
@@ -886,7 +984,7 @@
         videoGL = null; cameraAnchor = null;
         ui.xrState = xrMode ? "ready" : "unsupported"; ui.engaged = false; refreshPill();
         enterBtn.textContent = "Start Teleop";
-        if (calibBtn) calibBtn.disabled = !xrMode;
+        xrReady = !!xrMode; updateCalibBtnEnabled();
         append("xr session ended");
       });
       ui.xrState = "in-session"; refreshPill();
@@ -981,17 +1079,10 @@
     if (verdicts.left && verdicts.right) {
       readoutOffset.left = results.left.o;
       readoutOffset.right = results.right.o;
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({
-          left: readoutOffset.left, right: readoutOffset.right,
-        }));
-        append("calibration applied and saved.");
-      } catch (e) {
-        append(`applied (couldn't persist: ${e.message})`);
-      }
-      setCalibStatus(true,
-        `calibrated · L=${fmt3Short(readoutOffset.left)} R=${fmt3Short(readoutOffset.right)}`,
-        "wrist calibrated");
+      profileStore.profiles[profileStore.active] = { left: readoutOffset.left, right: readoutOffset.right };
+      persistProfiles();
+      append(`calibration applied and saved to profile "${profileStore.active}".`);
+      refreshProfileUI();
     } else {
       append("calibration NOT applied — retry.");
       setCalibStatus(false,
@@ -1002,18 +1093,25 @@
 
   if (clearCalibBtn) {
     clearCalibBtn.addEventListener("click", () => {
-      try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
-      readoutOffset.left  = [0, 0, fallbackZ];
-      readoutOffset.right = [0, 0, fallbackZ];
-      append(`calibration cleared. Reverted to default offset ${fallbackZ.toFixed(3)}m on Z (legacy).`);
-      setCalibStatus(false,
-        `no calibration stored — using default ${(fallbackZ*100).toFixed(0)}cm Z offset`,
-        "wrist not calibrated");
+      if (profileStore.active === RAW_PROFILE_NAME) {
+        append(`"${RAW_PROFILE_NAME}" is always raw sensor data — nothing to clear.`);
+        return;
+      }
+      profileStore.profiles[profileStore.active] = rawOffsets();
+      readoutOffset.left = [0, 0, 0];
+      readoutOffset.right = [0, 0, 0];
+      persistProfiles();
+      append(`profile "${profileStore.active}" cleared — reverted to raw sensor data.`);
+      refreshProfileUI();
     });
   }
 
   if (calibBtn) {
     calibBtn.addEventListener("click", async () => {
+      if (profileStore.active === RAW_PROFILE_NAME) {
+        append(`"${RAW_PROFILE_NAME}" is fixed to raw sensor data — pick or create a profile first.`);
+        return;
+      }
       if (xrSession) {
         append("calibrate: please exit VR first, then click Calibrate.");
         return;
@@ -1048,7 +1146,7 @@
           ui.xrState = xrMode ? "ready" : "unsupported"; refreshPill();
           enterBtn.textContent = "Start Teleop";
           enterBtn.disabled = !xrMode;
-          calibBtn.disabled = !xrMode;
+          xrReady = !!xrMode; updateCalibBtnEnabled();
           append("xr session ended");
           if (wasCalibMode) processCalibrationResults();
         });
@@ -1061,7 +1159,7 @@
         append(`calibrate: xr error: ${err.message}`);
         calibMode = false;
         xrSession = null;
-        calibBtn.disabled = !xrMode;
+        xrReady = !!xrMode; updateCalibBtnEnabled();
         enterBtn.disabled = !xrMode;
       }
     });
