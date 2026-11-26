@@ -46,7 +46,9 @@ RUN apt-get update && apt-get install -y \
 ###
 
 # Install uv globally
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.3 /uv /uvx /usr/local/bin/
+# Unpinned, uv picks its newest Python, which can outrun the wheels in uv.lock (mujoco has no cp315).
+ENV UV_PYTHON=3.12
 
 ###
 ### Close out the container
